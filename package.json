@@ -1,0 +1,39 @@
+{
+  "name": "parking-management",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sistema de gestión para parqueadero de una sede — monolito modular",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev:api": "npm run start:dev --workspace apps/api",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace packages/shared && npm run build --workspace apps/api && npm run build --workspace apps/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspace apps/api",
+    "test:e2e": "npm run test:e2e --workspace apps/api",
+    "db:migrate": "npm run prisma:migrate --workspace apps/api",
+    "db:seed": "npm run prisma:seed --workspace apps/api",
+    "db:studio": "npm run prisma:studio --workspace apps/api"
+  },
+  "devDependencies": {
+    "@nestjs/common": "11.1.28",
+    "@nestjs/core": "11.1.28",
+    "npm-run-all": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "@nestjs/common": "11.1.28",
+    "@nestjs/core": "11.1.28",
+    "file-type": "21.3.4",
+    "postcss": "8.5.19",
+    "qs": "6.15.3",
+    "next": "16.2.10"
+  }
+}

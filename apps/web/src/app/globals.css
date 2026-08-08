@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --background: #f6f7f9;
+  --foreground: #172033;
+  --surface: #ffffff;
+  --muted: #647084;
+  --line: #e4e8ef;
+}
+
+body {
+  @apply bg-[#f6f7f9] text-slate-900 antialiased;
+  min-height: 100vh;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+* {
+  border-color: var(--line);
+}
+
+::selection {
+  background: #dce8ff;
+  color: #14284f;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  @apply transition-colors duration-150;
+}
+
+/* Impresión térmica 80 mm */
+@media print {
+  body {
+    background: white !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-area {
+    width: 72mm;
+    margin: 0;
+    padding: 0;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: black;
+  }
+}
+
+@page {
+  margin: 2mm;
+}

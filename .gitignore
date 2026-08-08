@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Builds and test output
+dist/
+.next/
+.next.*/
+out/
+build/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Environment — never commit secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+.vercel/
+
+# Prisma local databases
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
+
+# Logs and local tooling
+*.log
+npm-debug.log*
+.claude/
+.codex/
+.codex-preview/
+.agents/
+.vscode/
+.idea/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+# Local backups
+backups/
+*.dump

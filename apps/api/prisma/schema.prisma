@@ -1,0 +1,513 @@
+// Esquema de datos — Sistema de gestión de parqueadero (una sede)
+// Dinero: enteros en COP (sin decimales). Tiempos: UTC en BD, zona local en presentación.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Usuarios, roles y permisos
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  fullName     String
+  passwordHash String
+  pinHash      String? // PIN corto para autorizaciones rápidas de supervisor
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  roles            UserRole[]
+  shifts           Shift[]
+  entriesRegistered ParkingSession[] @relation("EntryOperator")
+  exitsRegistered   ParkingSession[] @relation("ExitOperator")
+  payments         Payment[]
+  auditLogs        AuditLog[]       @relation("Actor")
+  authorizations   AuditLog[]       @relation("Authorizer")
+  reprints         TicketReprint[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String  @id @default(cuid())
+  code        String  @unique // OPERATOR | SUPERVISOR | ADMIN | AUDITOR
+  name        String
+  description String?
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(cuid())
+  code        String @unique // ej: sessions.create, payments.confirm, tariffs.manage
+  description String
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Vehículos y tipos
+// ─────────────────────────────────────────────────────────────
+
+model VehicleType {
+  id        String  @id @default(cuid())
+  code      String  @unique // CAR | MOTORCYCLE | BICYCLE | TRUCK ...
+  name      String
+  icon      String? // nombre de icono para UI
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  sessions      ParkingSession[]
+  tariffs       Tariff[]
+  subscriptions Subscription[]
+
+  @@map("vehicle_types")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Estancias (entidad central) y tickets
+// ─────────────────────────────────────────────────────────────
+
+enum SessionStatus {
+  ACTIVE
+  PENDING_PAYMENT
+  PAID
+  CLOSED
+  CANCELLED
+  INCIDENT
+}
+
+model ParkingSession {
+  id     String        @id @default(cuid())
+  status SessionStatus @default(ACTIVE)
+
+  plate        String // normalizada en mayúsculas; TMP-xxxx para sin placa
+  isTempPlate  Boolean @default(false)
+  vehicleTypeId String
+  vehicleType   VehicleType @relation(fields: [vehicleTypeId], references: [id])
+
+  color       String?
+  brand       String?
+  spotNumber  String?
+  driverIdNumber String?
+  photoUrl    String?
+  notes       String?
+
+  entryAt         DateTime  @default(now())
+  exitAt          DateTime?
+  entryOperatorId String
+  entryOperator   User      @relation("EntryOperator", fields: [entryOperatorId], references: [id])
+  exitOperatorId  String?
+  exitOperator    User?     @relation("ExitOperator", fields: [exitOperatorId], references: [id])
+
+  // Copia inmutable del cálculo al liquidar (no depende de tarifas futuras)
+  tariffVersionId String?
+  tariffVersion   TariffVersion? @relation(fields: [tariffVersionId], references: [id])
+  billedMinutes   Int?
+  subtotal        Int?
+  discount        Int      @default(0)
+  tax             Int      @default(0)
+  total           Int?
+  calculationSnapshot Json? // reglas aplicadas, desglose completo
+
+  lostTicket Boolean @default(false)
+
+  // Beneficios aplicados
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  agreementId    String?
+  agreement      Agreement?    @relation(fields: [agreementId], references: [id])
+
+  ticket    Ticket?
+  payments  Payment[]
+  incidents Incident[]
+  invoice   Invoice?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([plate])
+  @@index([status])
+  @@index([entryAt])
+  @@index([exitAt])
+  @@map("parking_sessions")
+}
+
+model Ticket {
+  id        String   @id @default(cuid())
+  code      String   @unique // PK-YYYYMMDD-NNNNNN-CS (con checksum)
+  sessionId String   @unique
+  session   ParkingSession @relation(fields: [sessionId], references: [id])
+  issuedAt  DateTime @default(now())
+
+  reprints TicketReprint[]
+
+  @@index([code])
+  @@map("tickets")
+}
+
+model TicketReprint {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@map("ticket_reprints")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tarifas versionadas
+// ─────────────────────────────────────────────────────────────
+
+model Tariff {
+  id            String      @id @default(cuid())
+  name          String
+  vehicleTypeId String
+  vehicleType   VehicleType @relation(fields: [vehicleTypeId], references: [id])
+  active        Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+
+  versions TariffVersion[]
+
+  @@map("tariffs")
+}
+
+model TariffVersion {
+  id        String   @id @default(cuid())
+  tariffId  String
+  tariff    Tariff   @relation(fields: [tariffId], references: [id])
+  version   Int
+  // Reglas del motor de tarifas (JSON validado por el motor):
+  // { mode, unitPrice, fractionMinutes, graceMinutes, dailyMax, dayPrice,
+  //   nightRate?, weekdayOverrides?, specialDates?, lostTicketFee ... }
+  rules     Json
+  validFrom DateTime @default(now())
+  validTo   DateTime?
+  createdById String?
+  createdAt DateTime @default(now())
+
+  sessions ParkingSession[]
+
+  @@unique([tariffId, version])
+  @@map("tariff_versions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Caja y turnos
+// ─────────────────────────────────────────────────────────────
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+model Shift {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  status        ShiftStatus @default(OPEN)
+  openedAt      DateTime    @default(now())
+  closedAt      DateTime?
+  openingCash   Int // base inicial
+  expectedCash  Int? // calculado al cierre
+  countedCash   Int? // contado por el operador
+  difference    Int? // countedCash - expectedCash
+  closingNotes  String?
+
+  payments      Payment[]
+  cashMovements CashMovement[]
+
+  @@index([status])
+  @@index([openedAt])
+  @@map("shifts")
+}
+
+enum CashMovementType {
+  IN
+  OUT
+}
+
+model CashMovement {
+  id        String           @id @default(cuid())
+  shiftId   String
+  shift     Shift            @relation(fields: [shiftId], references: [id])
+  type      CashMovementType
+  amount    Int
+  reason    String
+  createdBy String
+  createdAt DateTime         @default(now())
+
+  @@map("cash_movements")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Pagos
+// ─────────────────────────────────────────────────────────────
+
+enum PaymentStatus {
+  CONFIRMED
+  VOIDED
+}
+
+model PaymentMethod {
+  id     String  @id @default(cuid())
+  code   String  @unique // CASH | CARD | TRANSFER | AGREEMENT | SUBSCRIPTION | COURTESY | OTHER
+  name   String
+  isCash Boolean @default(false)
+  active Boolean @default(true)
+
+  allocations PaymentAllocation[]
+
+  @@map("payment_methods")
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  receiptNumber  String        @unique // RC-000001 secuencial
+  sessionId      String
+  session        ParkingSession @relation(fields: [sessionId], references: [id])
+  shiftId        String
+  shift          Shift         @relation(fields: [shiftId], references: [id])
+  operatorId     String
+  operator       User          @relation(fields: [operatorId], references: [id])
+  status         PaymentStatus @default(CONFIRMED)
+  amount         Int // total cobrado
+  receivedAmount Int? // efectivo recibido
+  changeAmount   Int? // cambio entregado
+  idempotencyKey String        @unique // previene dobles cobros
+  voidReason     String?
+  voidedById     String?
+  voidedAt       DateTime?
+  createdAt      DateTime      @default(now())
+
+  allocations PaymentAllocation[]
+
+  @@index([shiftId])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+// Pago mixto: un pago se reparte entre varios medios
+model PaymentAllocation {
+  id              String        @id @default(cuid())
+  paymentId       String
+  payment         Payment       @relation(fields: [paymentId], references: [id])
+  paymentMethodId String
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  amount          Int
+  reference       String? // voucher, número de transferencia
+
+  @@map("payment_allocations")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Clientes, convenios y mensualidades
+// ─────────────────────────────────────────────────────────────
+
+enum CustomerKind {
+  PERSON
+  COMPANY
+}
+
+model Customer {
+  id        String       @id @default(cuid())
+  kind      CustomerKind @default(PERSON)
+  name      String
+  idNumber  String? // cédula / NIT
+  phone     String?
+  email     String?
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+
+  agreements    Agreement[]
+  subscriptions Subscription[]
+
+  @@index([idNumber])
+  @@map("customers")
+}
+
+enum AgreementStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+}
+
+// Convenio: descuento o tarifa especial para empresa/entidad
+model Agreement {
+  id           String          @id @default(cuid())
+  customerId   String
+  customer     Customer        @relation(fields: [customerId], references: [id])
+  name         String
+  status       AgreementStatus @default(ACTIVE)
+  discountPct  Int             @default(0) // 0-100
+  flatDiscount Int             @default(0) // valor fijo por operación
+  startsAt     DateTime
+  endsAt       DateTime?
+  notes        String?
+
+  sessions ParkingSession[]
+
+  @@map("agreements")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+  CANCELLED
+}
+
+// Mensualidad: placa cubierta entre fechas
+model Subscription {
+  id            String             @id @default(cuid())
+  customerId    String
+  customer      Customer           @relation(fields: [customerId], references: [id])
+  plate         String
+  vehicleTypeId String
+  vehicleType   VehicleType        @relation(fields: [vehicleTypeId], references: [id])
+  status        SubscriptionStatus @default(ACTIVE)
+  startsAt      DateTime
+  endsAt        DateTime
+  price         Int
+  notes         String?
+  createdAt     DateTime           @default(now())
+
+  sessions ParkingSession[]
+
+  @@index([plate])
+  @@index([endsAt])
+  @@map("subscriptions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Facturación (adaptador; proveedor real se integra después)
+// ─────────────────────────────────────────────────────────────
+
+enum InvoiceStatus {
+  PENDING
+  SENT
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+model Invoice {
+  id         String        @id @default(cuid())
+  number     String        @unique
+  sessionId  String        @unique
+  session    ParkingSession @relation(fields: [sessionId], references: [id])
+  status     InvoiceStatus @default(PENDING)
+  provider   String        @default("mock")
+  providerRef String?
+  payload    Json?
+  attempts   Int           @default(0)
+  lastError  String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([status])
+  @@map("invoices")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Incidencias
+// ─────────────────────────────────────────────────────────────
+
+enum IncidentStatus {
+  OPEN
+  RESOLVED
+}
+
+model Incident {
+  id          String         @id @default(cuid())
+  sessionId   String?
+  session     ParkingSession? @relation(fields: [sessionId], references: [id])
+  status      IncidentStatus @default(OPEN)
+  kind        String // LOST_TICKET | DAMAGE | DISPUTE | OTHER
+  description String
+  createdBy   String
+  resolvedBy  String?
+  resolution  String?
+  createdAt   DateTime       @default(now())
+  resolvedAt  DateTime?
+
+  @@map("incidents")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Auditoría y configuración
+// ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  user         User?    @relation("Actor", fields: [userId], references: [id])
+  authorizerId String? // supervisor que autorizó, si aplica
+  authorizer   User?    @relation("Authorizer", fields: [authorizerId], references: [id])
+  action       String // ej: SESSION_ENTRY, PAYMENT_CONFIRM, TARIFF_UPDATE
+  module       String
+  entityType   String?
+  entityId     String?
+  oldValue     Json?
+  newValue     Json?
+  reason       String?
+  terminal     String? // IP o identificador de terminal
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([entityId])
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+// Contadores secuenciales (tickets, comprobantes) — evita huecos y duplicados
+model Counter {
+  key   String @id // ej: ticket-20260718, receipt
+  value Int    @default(0)
+
+  @@map("counters")
+}
