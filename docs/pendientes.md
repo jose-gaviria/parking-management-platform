@@ -31,9 +31,32 @@ La arquitectura de adaptador (`BillingProvider`) está lista: implementar
 `createInvoice / getInvoiceStatus / cancelInvoice` para el proveedor real y
 registrarlo en `billing.module.ts`.
 
+## Decisión de negocio pendiente: convenios
+
+El modelo, los endpoints y el medio de pago `AGREEMENT` existen, pero **ningún
+cobro aplica un convenio todavía**. Falta definir cómo se detecta:
+
+- [ ] ¿Por placa registrada, como la mensualidad?
+- [ ] ¿Por cliente identificado en la entrada?
+- [ ] ¿Lo elige el operador al cobrar, con autorización?
+
+Hasta responderlo no se implementa. Ver A1 en [auditoria.md](auditoria.md).
+
+## Anulación de pagos y facturación electrónica
+
+Al anular un pago, el sistema marca la factura local como `CANCELLED`. Con un
+proveedor real de facturación electrónica eso **no basta**: una factura aceptada se
+corrige con nota crédito. Al integrar el proveedor hay que añadir
+`createCreditNote` al adaptador `BillingProvider` y llamarlo desde la anulación.
+
 ## Mejoras técnicas propuestas (no bloqueantes)
 
-- [ ] Pruebas E2E con Playwright de los flujos operador (estructura lista para agregarlas)
+- [ ] Pruebas de servicios de dinero (pagos, anulación, cierre de turno) — hoy solo
+      hay pruebas de funciones puras. Prioridad alta: ver A8 en [auditoria.md](auditoria.md)
+- [ ] Pruebas E2E con Playwright de los flujos operador
+- [ ] Agregar los reportes en SQL en lugar de en memoria (A6)
+- [ ] Cálculo cerrado en el motor de tarifas para estancias largas (A3)
+- [ ] Fijar la precedencia entre franjas horarias y fechas especiales, con test (A4)
 - [ ] Exportación a Excel/PDF en reportes (hoy: CSV)
 - [ ] Fotografía del vehículo en la entrada (campo `photoUrl` ya existe en BD)
 - [ ] Notificaciones sonoras del lector

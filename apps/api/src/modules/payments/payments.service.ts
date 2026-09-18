@@ -245,6 +245,12 @@ export class PaymentsService {
     return payment;
   }
 
+  /**
+   * Anula un pago. Nunca borra: marca VOIDED y conserva el histórico.
+   * Si la estancia se queda sin ningún pago confirmado, vuelve a quedar
+   * pendiente de cobro — de lo contrario el vehículo quedaría cerrado y
+   * cobrado en los reportes con un pago que ya no existe.
+   */
   async voidPayment(paymentId: string, userId: string, authorizerId: string, reason: string) {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) {
@@ -263,6 +269,38 @@ export class PaymentsService {
           voidedAt: new Date(),
         },
       });
+
+      const stillPaid = await tx.payment.count({
+        where: { sessionId: payment.sessionId, status: 'CONFIRMED' },
+      });
+      let sessionReopened = false;
+      if (stillPaid === 0) {
+        const reopened = await tx.parkingSession.updateMany({
+          where: { id: payment.sessionId, status: 'CLOSED' },
+          data: {
+            status: 'PENDING_PAYMENT',
+            exitAt: null,
+            exitOperatorId: null,
+            tariffVersionId: null,
+            billedMinutes: null,
+            subtotal: null,
+            discount: 0,
+            tax: 0,
+            total: null,
+            calculationSnapshot: Prisma.DbNull,
+          },
+        });
+        sessionReopened = reopened.count === 1;
+
+        // La factura asociada pierde su respaldo: queda anulada localmente.
+        // Con un proveedor real de facturación electrónica esto exige nota
+        // crédito (ver docs/pendientes.md).
+        await tx.invoice.updateMany({
+          where: { sessionId: payment.sessionId, status: { notIn: ['CANCELLED'] } },
+          data: { status: 'CANCELLED' },
+        });
+      }
+
       await this.audit.log(
         {
           userId,
@@ -272,12 +310,12 @@ export class PaymentsService {
           entityType: 'Payment',
           entityId: paymentId,
           oldValue: { status: 'CONFIRMED', amount: payment.amount },
-          newValue: { status: 'VOIDED' },
+          newValue: { status: 'VOIDED', sessionReopened, sessionId: payment.sessionId },
           reason,
         },
         tx,
       );
-      return voided;
+      return { ...voided, sessionReopened };
     });
   }
 

@@ -200,6 +200,9 @@ export default function CobrarPage() {
       setError(err instanceof ApiError ? err.message : 'No se pudo aplicar el descuento.');
     } finally {
       setLoading(false);
+      // El PIN no queda en el formulario: cada autorización se pide de nuevo
+      // al supervisor, no basta con que la haya tecleado una vez en el turno.
+      setAuthorizer({ username: '', pin: '' });
     }
   }
 
@@ -223,6 +226,8 @@ export default function CobrarPage() {
       setError(err instanceof ApiError ? err.message : 'No se pudo aplicar ticket perdido.');
     } finally {
       setLoading(false);
+      setAuthorizer({ username: '', pin: '' });
+      setLostReason('');
     }
   }
 
@@ -268,6 +273,7 @@ export default function CobrarPage() {
       });
       setResult(res);
       setQuote(null);
+      setAppliedDiscount(null); // no conservar la credencial del supervisor en memoria
       window.open(`/print/receipt/${res.payment.id}`, '_blank', 'width=400,height=600');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo registrar el pago.');

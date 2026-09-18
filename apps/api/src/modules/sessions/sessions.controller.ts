@@ -10,6 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AppException } from '../../common/errors/app.exception';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { PERMISSIONS } from '../../common/permissions';
 import { AuthService } from '../auth/auth.service';
@@ -29,7 +30,11 @@ class CreateEntryDto {
   @IsOptional() @IsString() spotNumber?: string;
   @IsOptional() @IsString() driverIdNumber?: string;
   @IsOptional() @IsString() notes?: string;
+
+  /** Segundo ingreso de una placa ya activa: exige autorización de supervisor. */
   @IsOptional() @IsBoolean() allowDuplicate?: boolean;
+  @IsOptional() @IsString() authorizerUsername?: string;
+  @IsOptional() @IsString() authorizerPin?: string;
 }
 
 class ScanDto {
@@ -57,6 +62,13 @@ class ReprintDto {
   @IsString() @IsNotEmpty({ message: 'Indica el motivo de la reimpresión.' }) reason!: string;
 }
 
+/** Query params llegan como texto: `Number('abc')` daría NaN y rompería el cálculo. */
+function parsePositiveInt(raw?: string): number | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
 @ApiTags('sessions')
 @Controller('sessions')
 export class SessionsController {
@@ -67,8 +79,34 @@ export class SessionsController {
 
   @Post('entry')
   @RequirePermissions(PERMISSIONS.SESSIONS_CREATE)
-  createEntry(@Body() dto: CreateEntryDto, @CurrentUser() user: AuthUser, @Ip() ip: string) {
-    return this.sessions.createEntry({ ...dto, operatorId: user.id, terminal: ip });
+  async createEntry(
+    @Body() dto: CreateEntryDto,
+    @CurrentUser() user: AuthUser,
+    @Ip() ip: string,
+  ) {
+    // Sin esto, cualquier operador podría saltarse el aviso de placa duplicada
+    // enviando allowDuplicate: true directamente a la API.
+    let authorizerId: string | undefined;
+    if (dto.allowDuplicate) {
+      if (!dto.authorizerUsername || !dto.authorizerPin) {
+        throw new AppException(
+          'NEEDS_AUTHORIZATION',
+          'Registrar una placa que ya está adentro requiere autorización de un supervisor.',
+        );
+      }
+      authorizerId = await this.auth.validateSupervisor(
+        dto.authorizerUsername,
+        dto.authorizerPin,
+        PERMISSIONS.SESSIONS_ALLOW_DUPLICATE,
+      );
+    }
+    const { authorizerUsername: _u, authorizerPin: _p, ...entry } = dto;
+    return this.sessions.createEntry({
+      ...entry,
+      operatorId: user.id,
+      authorizerId,
+      terminal: ip,
+    });
   }
 
   @Get('inside')
@@ -105,11 +143,13 @@ export class SessionsController {
   quote(
     @Param('id') id: string,
     @Query('discountPct') discountPct?: string,
+    @Query('flatDiscount') flatDiscount?: string,
     @Query('lostTicket') lostTicket?: string,
     @Query('courtesy') courtesy?: string,
   ) {
     return this.sessions.quoteForSession(id, {
-      discountPct: discountPct ? Number(discountPct) : undefined,
+      discountPct: parsePositiveInt(discountPct),
+      flatDiscount: parsePositiveInt(flatDiscount),
       lostTicket: lostTicket === 'true',
       courtesy: courtesy === 'true',
     });

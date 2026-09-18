@@ -7,7 +7,10 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // En serverless la app usa la URL con pooling; las migraciones necesitan
+  // conexión directa (el pooler en modo transacción no soporta DDL con locks).
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -510,4 +513,16 @@ model Counter {
   value Int    @default(0)
 
   @@map("counters")
+}
+
+// Intentos fallidos de autenticación y de autorización con PIN.
+// Vive en la BD, no en memoria: en serverless cada instancia tendría su propio
+// contador y el bloqueo no protegería nada (ver docs/auditoria.md, A2).
+model AuthAttempt {
+  key         String    @id // "login:<usuario>" | "pin:<usuario>"
+  fails       Int       @default(0)
+  lockedUntil DateTime? @map("locked_until")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("auth_attempts")
 }

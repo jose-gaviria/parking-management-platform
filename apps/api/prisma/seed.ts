@@ -5,6 +5,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { createHmac } from 'crypto';
+import { BCRYPT_COST } from '../src/common/hashing';
 
 const prisma = new PrismaClient();
 
@@ -21,6 +22,7 @@ const PERMISSIONS: Record<string, string> = {
   'sessions.cancel': 'Anular estancias',
   'sessions.lost_ticket': 'Gestionar ticket perdido',
   'sessions.fix_plate': 'Corregir placas',
+  'sessions.allow_duplicate': 'Autorizar segundo ingreso de una placa ya activa',
   'payments.confirm': 'Confirmar pagos',
   'payments.void': 'Anular pagos',
   'payments.discount': 'Autorizar descuentos',
@@ -62,6 +64,7 @@ const ROLE_PERMS: Record<string, string[]> = {
     'sessions.cancel',
     'sessions.lost_ticket',
     'sessions.fix_plate',
+    'sessions.allow_duplicate',
     'payments.confirm',
     'payments.void',
     'payments.discount',
@@ -134,8 +137,8 @@ async function main() {
       create: {
         username: u.username,
         fullName: u.fullName,
-        passwordHash: await bcrypt.hash(u.password, 10),
-        pinHash: u.pin ? await bcrypt.hash(u.pin, 10) : undefined,
+        passwordHash: await bcrypt.hash(u.password, BCRYPT_COST),
+        pinHash: u.pin ? await bcrypt.hash(u.pin, BCRYPT_COST) : undefined,
         roles: { create: { roleId: role.id } },
       },
       update: {},

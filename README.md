@@ -4,6 +4,8 @@ Sistema completo para un parqueadero de una sede: entradas, salidas, cobro con l
 
 **Arquitectura:** monolito modular · Next.js (web) + NestJS (API) + PostgreSQL (Prisma) · monorepo npm workspaces.
 
+**Despliegue:** web y API en Vercel (`parqueadero-demo` y `parqueadero-demo-api`), base de datos en Neon. Docker se usa **solo en desarrollo**, y únicamente para el Postgres local. Detalles y variables requeridas en [docs/produccion.md](docs/produccion.md).
+
 ---
 
 ## Requisitos
@@ -37,6 +39,7 @@ npm run dev
 
 - Web: http://localhost:3001
 - API + documentación Swagger: http://localhost:4000/docs
+- Estado de la API: http://localhost:4000/health
 
 ## Usuarios de demostración (SOLO desarrollo)
 
@@ -92,15 +95,17 @@ parqueadero/
 - [docs/operacion.md](docs/operacion.md) — manual del operador y del administrador
 - [docs/produccion.md](docs/produccion.md) — despliegue, seguridad, respaldos
 - [docs/pendientes.md](docs/pendientes.md) — información pendiente del negocio e integraciones futuras
+- [docs/auditoria.md](docs/auditoria.md) — auditoría técnica y de seguridad (2026-08-14)
 
 ## Seguridad
 
 - Contraseñas y PIN con bcrypt. JWT con expiración (8 h por defecto).
-- Permisos por acción validados en el backend (guards), no solo en la UI.
-- Acciones sensibles (descuento, anulación, ticket perdido, corrección de placa) exigen credencial de supervisor.
-- Rate limiting, Helmet, validación de entrada en todos los endpoints, CORS restringido.
-- El código de barras lleva checksum HMAC: códigos inventados o alterados no validan.
-- Idempotencia en pagos: doble clic o reintento de red jamás genera dos cobros.
-- Nunca se eliminan movimientos financieros: anulaciones y ajustes conservan el historial.
+- `JWT_SECRET` y `TICKET_SIGNING_SECRET` son obligatorias: sin ellas el proceso no arranca (no hay valor por defecto que se pueda adivinar).
+- Permisos por acción validados en el backend (guards), no solo en la UI. El guard los relee de la base de datos cada 15 s: desactivar un usuario o quitarle un rol surte efecto sin esperar a que expire su token.
+- Acciones sensibles (descuento, anulación, ticket perdido, corrección de placa, segundo ingreso de una placa ya activa) exigen credencial de supervisor. Tras 5 PIN fallidos, el autorizador queda bloqueado 5 minutos; cada intento fallido queda en auditoría.
+- Rate limiting (10 inicios de sesión por minuto), Helmet, validación de entrada en todos los endpoints, CORS restringido. Swagger (`/docs`) no se publica en producción salvo `ENABLE_SWAGGER=1`.
+- El código de barras lleva checksum HMAC: un código **escaneado** inventado o alterado no valida. El código corto digitado a mano (sin checksum) se acepta a propósito para tickets ilegibles: identifica una estancia existente, no prueba autenticidad.
+- Idempotencia en pagos: doble clic o reintento de red jamás genera dos cobros. Cierre de estancia con guardia de concurrencia y aislamiento serializable.
+- Nunca se eliminan movimientos financieros: anulaciones y ajustes conservan el historial. Anular un pago devuelve la estancia a *pendiente de cobro* para que no quede como ingreso cerrado sin respaldo.
 
-⚠️ En producción: genera `JWT_SECRET` y `TICKET_SIGNING_SECRET` propios, usa contraseñas reales de BD y HTTPS. Ver [docs/produccion.md](docs/produccion.md).
+⚠️ En producción: genera `JWT_SECRET` y `TICKET_SIGNING_SECRET` propios, usa contraseñas reales de BD, HTTPS y `TRUST_PROXY=1` si hay proxy inverso. Ver [docs/produccion.md](docs/produccion.md) y [docs/auditoria.md](docs/auditoria.md).

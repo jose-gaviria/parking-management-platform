@@ -21,8 +21,10 @@ export interface CreateEntryInput {
   notes?: string;
   operatorId: string;
   terminal?: string;
-  /** Permite segunda estancia activa para la misma placa (requiere permiso especial) */
+  /** Permite segunda estancia activa para la misma placa (requiere autorización de supervisor) */
   allowDuplicate?: boolean;
+  /** Supervisor que autorizó el ingreso duplicado */
+  authorizerId?: string;
 }
 
 @Injectable()
@@ -55,6 +57,10 @@ export class SessionsService {
         plate = `TMP-${String(counter.value).padStart(4, '0')}`;
       } else {
         plate = this.normalizePlate(input.plate!);
+        // Bloqueo por placa dentro de la transacción: dos terminales que
+        // registran la misma placa a la vez se serializan aquí, si no ambas
+        // pasarían la comprobación de duplicado y quedarían dos ingresos.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${plate}))`;
         const existing = await tx.parkingSession.findFirst({
           where: { plate, status: 'ACTIVE' },
         });
@@ -99,11 +105,17 @@ export class SessionsService {
       await this.audit.log(
         {
           userId: input.operatorId,
+          authorizerId: input.authorizerId,
           action: 'SESSION_ENTRY',
           module: 'sessions',
           entityType: 'ParkingSession',
           entityId: session.id,
-          newValue: { plate, vehicleTypeId: input.vehicleTypeId, ticket: code },
+          newValue: {
+            plate,
+            vehicleTypeId: input.vehicleTypeId,
+            ticket: code,
+            allowDuplicate: input.allowDuplicate ?? false,
+          },
           terminal: input.terminal,
         },
         tx,

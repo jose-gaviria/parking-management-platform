@@ -9,6 +9,7 @@ export const PERMISSIONS = {
   SESSIONS_CANCEL: 'sessions.cancel',
   SESSIONS_LOST_TICKET: 'sessions.lost_ticket',
   SESSIONS_FIX_PLATE: 'sessions.fix_plate',
+  SESSIONS_ALLOW_DUPLICATE: 'sessions.allow_duplicate',
 
   PAYMENTS_CONFIRM: 'payments.confirm',
   PAYMENTS_VOID: 'payments.void',

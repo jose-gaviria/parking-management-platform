@@ -5,6 +5,7 @@
   "description": "API del sistema de parqueadero — NestJS + Prisma",
   "scripts": {
     "build": "nest build",
+    "vercel-build": "prisma generate && prisma migrate deploy && nest build",
     "postinstall": "prisma generate",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
@@ -12,7 +13,6 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",

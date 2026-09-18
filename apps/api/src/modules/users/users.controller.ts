@@ -17,7 +17,7 @@ import { UsersService } from './users.service';
 class CreateUserDto {
   @IsString() @IsNotEmpty({ message: 'Escribe el nombre de usuario.' }) username!: string;
   @IsString() @IsNotEmpty({ message: 'Escribe el nombre completo.' }) fullName!: string;
-  @IsString() @MinLength(6, { message: 'La contraseña debe tener al menos 6 caracteres.' })
+  @IsString() @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
   password!: string;
   @IsOptional() @IsString() pin?: string;
   @IsArray() @ArrayNotEmpty({ message: 'Selecciona al menos un rol.' }) roleCodes!: string[];

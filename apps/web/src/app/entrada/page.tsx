@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { BadgePercent, Bike, CarFront, Hotel, LucideIcon } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { AppShell } from '@/components/app-shell';
-import { Alert, Button, Card, Input, PageTitle } from '@/components/ui';
+import { Alert, Button, Card, Input, Modal, PageTitle } from '@/components/ui';
 
 interface VehicleType {
   id: string;
@@ -37,6 +37,9 @@ export default function EntradaPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState<EntryResult | null>(null);
+  // Placa ya adentro: el supervisor puede autorizar un segundo ingreso
+  const [duplicateModal, setDuplicateModal] = useState('');
+  const [authorizer, setAuthorizer] = useState({ username: '', pin: '' });
 
   useEffect(() => {
     api<VehicleType[]>('/catalog/vehicle-types').then((t) => {
@@ -46,9 +49,7 @@ export default function EntradaPage() {
     plateRef.current?.focus();
   }, []);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (loading) return;
+  async function registerEntry(auth?: { username: string; pin: string }) {
     setError('');
     setLoading(true);
     try {
@@ -61,16 +62,31 @@ export default function EntradaPage() {
           brand: optional.brand || undefined,
           spotNumber: optional.spotNumber || undefined,
           notes: optional.notes || undefined,
+          allowDuplicate: auth ? true : undefined,
+          authorizerUsername: auth?.username,
+          authorizerPin: auth?.pin,
         },
       });
       setDone(session);
       // Abrir ticket para imprimir en nueva pestaña
       window.open(`/print/ticket/${session.id}`, '_blank', 'width=400,height=600');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo registrar la entrada.');
+      if (err instanceof ApiError && err.code === 'DUPLICATE_ACTIVE') {
+        setDuplicateModal(err.message);
+      } else {
+        setError(err instanceof ApiError ? err.message : 'No se pudo registrar la entrada.');
+      }
     } finally {
       setLoading(false);
+      // El PIN del supervisor no se conserva: cada autorización se pide de nuevo.
+      setAuthorizer({ username: '', pin: '' });
     }
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (loading) return;
+    await registerEntry();
   }
 
   function reset() {
@@ -214,6 +230,42 @@ export default function EntradaPage() {
           </form>
         </Card>
       </div>
+
+      <Modal
+        open={Boolean(duplicateModal)}
+        title="Placa ya adentro — requiere supervisor"
+        onClose={() => setDuplicateModal('')}
+      >
+        <div className="flex flex-col gap-3">
+          <Alert kind="warning">{duplicateModal}</Alert>
+          <p className="text-sm text-slate-600">
+            Si de verdad es otro vehículo con la misma placa, un supervisor puede autorizar el
+            segundo ingreso. Queda registrado en auditoría.
+          </p>
+          <Input
+            label="Usuario del supervisor"
+            value={authorizer.username}
+            onChange={(e) => setAuthorizer({ ...authorizer, username: e.target.value })}
+          />
+          <Input
+            label="PIN del supervisor"
+            type="password"
+            value={authorizer.pin}
+            onChange={(e) => setAuthorizer({ ...authorizer, pin: e.target.value })}
+          />
+          <Button
+            variant="warning"
+            loading={loading}
+            onClick={() => {
+              const auth = { ...authorizer };
+              setDuplicateModal('');
+              void registerEntry(auth);
+            }}
+          >
+            Autorizar segundo ingreso
+          </Button>
+        </div>
+      </Modal>
     </AppShell>
   );
 }

@@ -137,8 +137,19 @@ export class ReportsService {
       include: { vehicleType: true, ticket: true },
       orderBy: { entryAt: 'asc' },
     });
-    const header =
-      'ticket,placa,tipo,estado,entrada,salida,minutos,subtotal,descuento,impuesto,total';
+    const header = [
+      'ticket',
+      'placa',
+      'tipo',
+      'estado',
+      'entrada',
+      'salida',
+      'minutos',
+      'subtotal',
+      'descuento',
+      'impuesto',
+      'total',
+    ];
     const rows = sessions.map((s) =>
       [
         s.ticket?.code ?? '',
@@ -152,8 +163,20 @@ export class ReportsService {
         s.discount,
         s.tax,
         s.total ?? '',
-      ].join(','),
+      ].map(csvCell).join(','),
     );
-    return [header, ...rows].join('\n');
+    // BOM para que Excel en Windows abra los acentos correctamente.
+    return '﻿' + [header.map(csvCell).join(','), ...rows].join('\r\n');
   }
+}
+
+/**
+ * Escapa un valor para CSV. Además neutraliza la inyección de fórmulas:
+ * un nombre de tipo de vehículo como `=HYPERLINK(...)` se ejecutaría al abrir
+ * el archivo en Excel o Sheets.
+ */
+function csvCell(value: string | number): string {
+  const text = String(value);
+  const neutralized = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return /[",\r\n]/.test(neutralized) ? `"${neutralized.replace(/"/g, '""')}"` : neutralized;
 }
