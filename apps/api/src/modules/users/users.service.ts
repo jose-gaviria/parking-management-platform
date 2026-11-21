@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AppException } from '../../common/errors/app.exception';
+import { demoAccess } from '../../common/demo';
 import { BCRYPT_COST, MIN_PASSWORD_LENGTH, MIN_PIN_LENGTH } from '../../common/hashing';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -88,6 +89,14 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new AppException('NOT_FOUND', 'El usuario no existe.', HttpStatus.NOT_FOUND);
+    }
+    // El acceso del demo es público y fijo: nadie puede cambiarlo ni desactivarlo desde la interfaz.
+    if (user.username === demoAccess()?.username) {
+      throw new AppException(
+        'DEMO_USER_LOCKED',
+        'El usuario de demostración no se puede modificar.',
+        HttpStatus.FORBIDDEN,
+      );
     }
     const data: Record<string, unknown> = {};
     if (params.fullName !== undefined) data.fullName = params.fullName;

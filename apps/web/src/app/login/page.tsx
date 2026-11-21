@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, CarFront, ShieldCheck, SquareParking } from 'lucide-react';
 import { api, ApiError, setSession } from '@/lib/api';
@@ -18,6 +18,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [demo, setDemo] = useState<{ username: string; password: string } | null>(null);
+
+  // En el demo la API publica un acceso fijo: se muestra y se deja escrito en el formulario.
+  useEffect(() => {
+    api<{ username: string; password: string }>('/auth/demo')
+      .then((access) => {
+        setDemo(access);
+        setUsername(access.username);
+        setPassword(access.password);
+      })
+      .catch(() => undefined);
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -86,6 +98,15 @@ export default function LoginPage() {
           <p className="mt-2 text-sm leading-6 text-slate-500">
             Ingresa tus credenciales para acceder al sistema.
           </p>
+
+          {demo && (
+            <div className="mt-6">
+              <Alert kind="info">
+                Demo de prueba — usuario <strong>{demo.username}</strong>, contraseña{' '}
+                <strong>{demo.password}</strong>.
+              </Alert>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-5">
             <Input

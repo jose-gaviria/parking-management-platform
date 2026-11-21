@@ -21,6 +21,16 @@ Variables que deben existir en **ambos** proyectos de Vercel:
 | `DATABASE_URL_UNPOOLED` | api | Conexión directa para las migraciones (la crea la integración de Neon) |
 | `NEXT_PUBLIC_API_URL` | web | URL de la API desplegada |
 
+### Acceso de demostración
+
+El proyecto `parqueadero-demo-api` define `DEMO_USERNAME` y `DEMO_PASSWORD`. Con ellas:
+
+- cada despliegue deja ese usuario (rol ADMIN) con esa contraseña (`prisma/demo-user.ts`, dentro de `vercel-build`);
+- `GET /auth/demo` las publica y el inicio de sesión las muestra y las deja escritas;
+- la API rechaza cualquier cambio a ese usuario (contraseña, estado o roles).
+
+Son credenciales **públicas a propósito**. Una instalación real no define esas variables: no hay usuario demo y `/auth/demo` responde 404.
+
 `ENABLE_SWAGGER` se deja **sin definir**: Vercel pone `NODE_ENV=production` y
 `/docs` queda oculto, que es lo correcto.
 
@@ -29,7 +39,7 @@ Variables que deben existir en **ambos** proyectos de Vercel:
 Las aplica el propio despliegue: `apps/api/package.json` define
 
 ```
-"vercel-build": "prisma generate && prisma migrate deploy && nest build"
+"vercel-build": "prisma generate && prisma migrate deploy && ts-node --transpile-only prisma/demo-user.ts && nest build"
 ```
 
 Vercel usa ese script automáticamente. Si una migración falla, el despliegue falla

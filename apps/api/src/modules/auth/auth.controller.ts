@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Ip, Post } from '@nestjs/common';
+import { Body, Controller, Get, Ip, NotFoundException, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsNotEmpty, IsString } from 'class-validator';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
+import { demoAccess } from '../../common/demo';
 import { AuthService } from './auth.service';
 
 class LoginDto {
@@ -26,6 +27,15 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto, @Ip() ip: string) {
     return this.authService.login(dto.username, dto.password, ip);
+  }
+
+  /** Credenciales públicas del demo, para mostrarlas en el inicio de sesión. 404 si no es un demo. */
+  @Public()
+  @Get('demo')
+  demo() {
+    const demo = demoAccess();
+    if (!demo) throw new NotFoundException();
+    return demo;
   }
 
   @Get('me')
